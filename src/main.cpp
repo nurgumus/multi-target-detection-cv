@@ -69,8 +69,11 @@ int main(int argc, char** argv) {
 
         if (!paused) {
             if (!capture.read(frame)) {
-                // End of file — loop by reopening
-                capture = VideoSource(videoPath);
+                // Webcam disconnected or end of file
+                bool isCamera = (videoPath.size() == 1 && std::isdigit(videoPath[0]));
+                if (isCamera) break;  // can't reopen a live camera
+                // Loop video file from the beginning
+                capture      = VideoSource(videoPath);
                 trackManager = TrackManager();
                 detector     = Detector();
                 if (!capture.read(frame)) break;

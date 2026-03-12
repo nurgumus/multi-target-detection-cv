@@ -3,7 +3,12 @@
 #include <string>
 
 VideoSource::VideoSource(const std::string& path) {
-    m_cap.open(path);
+    // If the argument is a single digit, treat it as a camera index
+    if (path.size() == 1 && std::isdigit(path[0]))
+        m_cap.open(path[0] - '0');
+    else
+        m_cap.open(path);
+
     if (!m_cap.isOpened())
         throw std::runtime_error("VideoSource: cannot open \"" + path + "\"");
 

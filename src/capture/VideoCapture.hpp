@@ -10,9 +10,11 @@ public:
     explicit VideoSource(const std::string& path);
     ~VideoSource() = default;
 
-    // Non-copyable
+    // Non-copyable, but movable (needed to reassign in main loop)
     VideoSource(const VideoSource&)            = delete;
     VideoSource& operator=(const VideoSource&) = delete;
+    VideoSource(VideoSource&&)                 = default;
+    VideoSource& operator=(VideoSource&&)      = default;
 
     // Read next frame into dst. Returns false at end-of-stream.
     bool read(cv::Mat& dst);
