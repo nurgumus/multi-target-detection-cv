@@ -1,0 +1,12 @@
+build/
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+CMakeSettings.json
+out/
+vcpkg_installed/
+assets/*.mp4
+assets/*.avi
+assets/*.mkv

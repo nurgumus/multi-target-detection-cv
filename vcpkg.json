@@ -1,0 +1,11 @@
+{
+  "name": "cv-tracking-system",
+  "version": "0.1.0",
+  "dependencies": [
+    { "name": "opencv4" },
+    "glfw3",
+    "glad",
+    "glm",
+    { "name": "imgui", "features": ["glfw-binding", "opengl3-binding"] }
+  ]
+}
