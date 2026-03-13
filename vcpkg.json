@@ -6,6 +6,8 @@
     "glfw3",
     "glad",
     "glm",
-    { "name": "imgui", "features": ["glfw-binding", "opengl3-binding"] }
+    { "name": "imgui", "features": ["glfw-binding", "opengl3-binding"] },
+    "curl",
+    "nlohmann-json"
   ]
 }

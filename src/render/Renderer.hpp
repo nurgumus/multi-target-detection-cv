@@ -6,6 +6,7 @@
 #include "VideoTexture.hpp"
 #include "OverlayRenderer.hpp"
 #include "HudPanel.hpp"
+#include "AiPanel.hpp"
 #include "common/Types.hpp"
 
 // Top-level renderer. Owns the GLFW window and drives the render loop.
@@ -40,6 +41,11 @@ public:
     // Draw ImGui HUD.
     void drawHud(const TrackList& tracks, float fps, bool paused);
 
+    // Draw AI Tactical Analyst panel.
+    // Returns true if the user clicked "Analyze Now" inside the panel.
+    bool drawAiPanel(bool isAnalyzing, const std::string& text,
+                     int callsUsed, int callsMax);
+
     // Swap buffers and poll events.
     void endFrame();
 
@@ -55,6 +61,7 @@ private:
     VideoTexture   m_videoTexture;
     OverlayRenderer m_overlay;
     HudPanel       m_hud;
+    AiPanel        m_aiPanel;
 
     // Fullscreen quad
     GLuint m_quadVAO = 0;

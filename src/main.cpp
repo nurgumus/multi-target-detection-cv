@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <curl/curl.h>
 
 #include "capture/VideoCapture.hpp"
 #include "detection/Detector.hpp"
@@ -8,6 +9,8 @@
 #include "threat/ThreatScorer.hpp"
 #include "render/Renderer.hpp"
 #include "common/Types.hpp"
+#include "common/EnvLoader.hpp"
+#include "ai/GeminiClient.hpp"
 
 // Simple FPS counter using an exponential moving average
 class FpsCounter {
@@ -35,6 +38,14 @@ int main(int argc, char** argv) {
                   << "Example: CVTrackingSystem assets/sample_video.mp4\n";
         return 1;
     }
+
+    // ---- Gemini AI setup ----
+    curl_global_init(CURL_GLOBAL_ALL);
+    std::string  apiKey = loadEnvVar(".env", "GOOGLE_API_KEY");
+    if (apiKey.empty())
+        std::cerr << "Warning: GOOGLE_API_KEY not found in .env\n";
+    GeminiClient gemini(apiKey);
+    std::string  aiText;
 
     // ---- Pipeline objects ----
     VideoSource  capture(videoPath);
@@ -67,6 +78,21 @@ int main(int argc, char** argv) {
         }
         rWasDown = rNow;
 
+        // Handle AI analysis (G key)
+        static bool gWasDown = false;
+        bool gNow = renderer.keyPressed(GLFW_KEY_G);
+        if (gNow && !gWasDown) {
+            std::string reason;
+            if (!gemini.requestAnalysis(trackManager.getTracks(), &reason))
+                aiText = "[" + reason + "]";
+        }
+        gWasDown = gNow;
+
+        // Poll for completed AI response
+        std::string newAiText;
+        if (gemini.pollResult(newAiText))
+            aiText = std::move(newAiText);
+
         if (!paused) {
             if (!capture.read(frame)) {
                 // Webcam disconnected or end of file
@@ -96,6 +122,12 @@ int main(int argc, char** argv) {
             renderer.drawVideo();
             renderer.drawOverlays(tracks);
             renderer.drawHud(tracks, fpsCounter.fps(), paused);
+            if (renderer.drawAiPanel(gemini.isAnalyzing(), aiText,
+                             gemini.callsUsed(), gemini.callsMax())) {
+                std::string reason;
+                if (!gemini.requestAnalysis(trackManager.getTracks(), &reason))
+                    aiText = "[" + reason + "]";
+            }
 
             renderer.endFrame();
             fpsCounter.tick();
@@ -106,9 +138,16 @@ int main(int argc, char** argv) {
             renderer.drawVideo();  // show last frame
             renderer.drawOverlays(trackManager.getTracks());
             renderer.drawHud(trackManager.getTracks(), fpsCounter.fps(), paused);
+            if (renderer.drawAiPanel(gemini.isAnalyzing(), aiText,
+                             gemini.callsUsed(), gemini.callsMax())) {
+                std::string reason;
+                if (!gemini.requestAnalysis(trackManager.getTracks(), &reason))
+                    aiText = "[" + reason + "]";
+            }
             renderer.endFrame();
         }
     }
 
+    curl_global_cleanup();
     return 0;
 }

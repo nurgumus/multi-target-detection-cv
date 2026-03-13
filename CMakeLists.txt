@@ -10,6 +10,8 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # ---- Sources ----
 set(SOURCES
@@ -24,6 +26,8 @@ set(SOURCES
     src/render/VideoTexture.cpp
     src/render/OverlayRenderer.cpp
     src/render/HudPanel.cpp
+    src/render/AiPanel.cpp
+    src/ai/GeminiClient.cpp
 )
 
 add_executable(CVTrackingSystem ${SOURCES})
@@ -40,14 +44,23 @@ target_link_libraries(CVTrackingSystem PRIVATE
     glm::glm
     imgui::imgui
     opengl32
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
 )
 
-# ---- Post-build: copy shaders and DLLs ----
+# ---- Post-build: copy shaders, .env, and DLLs ----
 add_custom_command(TARGET CVTrackingSystem POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/shaders"
         "$<TARGET_FILE_DIR:CVTrackingSystem>/shaders"
     COMMENT "Copying shaders to output directory"
+)
+
+add_custom_command(TARGET CVTrackingSystem POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/.env"
+        "$<TARGET_FILE_DIR:CVTrackingSystem>/.env"
+    COMMENT "Copying .env to output directory"
 )
 
 # Copy runtime DLLs (OpenCV + other vcpkg DLLs) on Windows

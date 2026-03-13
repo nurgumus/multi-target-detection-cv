@@ -155,6 +155,11 @@ void Renderer::drawHud(const TrackList& tracks, float fps, bool paused) {
     m_hud.render(tracks, fps, paused);
 }
 
+bool Renderer::drawAiPanel(bool isAnalyzing, const std::string& text,
+                           int callsUsed, int callsMax) {
+    return m_aiPanel.render(isAnalyzing, text, m_winW, m_winH, callsUsed, callsMax);
+}
+
 void Renderer::endFrame() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
