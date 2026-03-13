@@ -1,6 +1,7 @@
 #include "ai/GeminiClient.hpp"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include <cmath>
 #include <sstream>
 
 using json = nlohmann::json;
@@ -153,10 +154,29 @@ std::string GeminiClient::buildPrompt(const TrackList& tracks) {
             t.state == TrackState::ACTIVE ? "ACTIVE" :
             t.state == TrackState::LOST   ? "LOST"   : "NEW";
 
+        // Derive cardinal heading from velocity vector
+        const char* heading = "stationary";
+        float vx = t.velocity.x, vy = t.velocity.y;
+        if (t.estimatedSpeed > 0.5f) {
+            float angle = std::atan2(vy, vx) * 180.f / 3.14159f;
+            if      (angle >  -22.5f && angle <=  22.5f) heading = "moving right";
+            else if (angle >   22.5f && angle <=  67.5f) heading = "moving down-right";
+            else if (angle >   67.5f && angle <= 112.5f) heading = "moving down";
+            else if (angle >  112.5f && angle <= 157.5f) heading = "moving down-left";
+            else if (angle > -157.5f && angle <= -112.5f) heading = "moving up-left";
+            else if (angle > -112.5f && angle <=  -67.5f) heading = "moving up";
+            else if (angle >  -67.5f && angle <=  -22.5f) heading = "moving up-right";
+            else                                           heading = "moving left";
+        }
+
+        int bboxArea = t.boundingBox.area();
+
         ss << "- Target #" << t.id
            << " [" << state << "]"
            << ": pos=(" << (int)t.position.x << "," << (int)t.position.y << ")"
+           << ", size=" << bboxArea << " px^2"
            << ", speed=" << t.estimatedSpeed << " px/frame"
+           << ", " << heading
            << ", threat=" << threat
            << ", tracked " << t.activeFrameCount << " frames\n";
     }
