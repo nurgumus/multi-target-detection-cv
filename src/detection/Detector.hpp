@@ -17,6 +17,8 @@ private:
     cv::Mat m_fgMask;       // reused each frame
     cv::Mat m_morphKernel;
 
-    static constexpr float MIN_AREA = 500.f;
+    // Raise MIN_AREA to filter out small noise blobs.
+    // Lower MAX_AREA if you want to ignore very large background regions.
+    static constexpr float MIN_AREA = 2000.f;
     static constexpr float MAX_AREA = 50000.f;
 };

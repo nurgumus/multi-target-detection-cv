@@ -17,11 +17,16 @@ public:
     const TrackList& getTracks() const { return m_tracks; }
 
 private:
-    // FSM thresholds
-    static constexpr int CONFIRM_HITS  = 3;   // NEW → ACTIVE
-    static constexpr int MAX_LOST      = 15;  // LOST → DEAD
-
-    static constexpr float IOU_THRESHOLD = 0.15f; // minimum IoU to consider a match
+    // FSM thresholds — tune these to control sensitivity:
+    //   CONFIRM_HITS : consecutive matched frames required before a track shows up.
+    //                  Higher = fewer ghost tracks, but real targets take longer to appear.
+    //   MAX_LOST     : frames a track survives without a detection before being deleted.
+    //                  Lower = less "sticky" tracks.
+    //   IOU_THRESHOLD: minimum bounding-box overlap to accept a detection→track match.
+    //                  Higher = stricter matching, less cross-track confusion.
+    static constexpr int   CONFIRM_HITS  = 5;    // was 3
+    static constexpr int   MAX_LOST      = 8;    // was 15
+    static constexpr float IOU_THRESHOLD = 0.25f; // was 0.15
 
     // Parallel structures: one Kalman tracker per track (same index)
     TrackList                              m_tracks;
