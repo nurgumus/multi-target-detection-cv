@@ -1,26 +1,51 @@
 # Real-Time Multi-Target Detection & Tracking System
 
-A C++ computer vision pipeline that detects and tracks multiple moving objects in real time — from a webcam or video file — and renders them in an OpenGL window with color-coded threat overlays and a live HUD.
+A C++ computer vision pipeline that detects and tracks multiple moving objects in real time — from a webcam or video file — and renders them in an OpenGL window with color-coded threat overlays, a live HUD, and an **AI Tactical Analyst** powered by the Gemini API.
 
-Built as a defense industry portfolio piece, demonstrating: sensor pipelines, Kalman filtering, data association, and real-time rendering discipline.
+Built as a defense industry portfolio piece, demonstrating: sensor pipelines, Kalman filtering, data association, real-time rendering, async networking, and LLM integration — all without a neural network detector.
 
 ---
 
 ## Quick Start
 
-```powershell
-# Webcam (recommended to try first)
-.\build\Release\CVTrackingSystem.exe 0
+### 1. Set up your API key
 
-# Video file
+```
+# Copy the example and fill in your key
+copy .env.example .env
+```
+
+Edit `.env`:
+```
+GOOGLE_API_KEY = your_key_here
+```
+
+### 2. Build and run
+
+```powershell
+# Install all dependencies (one-time, takes a few minutes)
+vcpkg install --triplet x64-windows
+
+# Configure
+cmake -B build -S . `
+  -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+
+# Compile
+cmake --build build --config Release
+
+# Run
 .\build\Release\CVTrackingSystem.exe assets\sample_video.mp4
 ```
+
+### Controls
 
 | Key | Action |
 |-----|--------|
 | `ESC` | Quit |
 | `Space` | Pause / Resume |
 | `R` | Reset tracker (clear all tracks) |
+| `G` | Request AI tactical analysis |
 
 ---
 
@@ -28,20 +53,30 @@ Built as a defense industry portfolio piece, demonstrating: sensor pipelines, Ka
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  ┌────────────────────┐                                  │
-│  │ FPS: 47.2  Tgts: 3 │  ← ImGui HUD panel              │
-│  ├────┬───────┬───────┤                                  │
-│  │ ID │ Speed │Threat │                                  │
-│  │  1 │ 5.2   │  MED  │                                  │
-│  │  2 │ 11.0  │  HIGH │                                  │
-│  │  3 │ 1.1   │  LOW  │                                  │
-│  └────┴───────┴───────┘                                  │
+│  ┌────────────────────────────┐                          │
+│  │ FPS: 47.2  Targets: 3      │  ← ImGui HUD panel       │
+│  ├────┬───────┬───────┬───────┤                          │
+│  │ ID │ Speed │Threat │Frames │                          │
+│  │  1 │ 5.2   │  MED  │  34   │                          │
+│  │  2 │ 11.0  │  HIGH │  91   │                          │
+│  │  3 │ 1.1   │  LOW  │  12   │                          │
+│  └────┴───────┴───────┴───────┘                          │
 │                                                          │
 │         ┌──────────┐  ← red box = HIGH threat            │
 │         │  TARGET  │───►  cyan arrow = velocity          │
 │         └──────────┘                                     │
 │        ·····  ← fading trail (last 30 positions)         │
 │                                                          │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │ [ AI TACTICAL ANALYST ]          calls: 2 / 20   │    │
+│  │──────────────────────────────────────────────────│    │
+│  │ 2 active targets. Track #2 (HIGH, moving         │    │
+│  │ down-right at 11 px/frame) is the primary        │    │
+│  │ concern. Track #1 appears to be slow background  │    │
+│  │ activity — monitor but low priority.             │    │
+│  │──────────────────────────────────────────────────│    │
+│  │            [ Analyze Now ]                       │    │
+│  └──────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -73,16 +108,18 @@ graph TD
     H --> I[VideoTexture\nBGR→RGB upload]
     H --> J[OverlayRenderer\nGL_LINES boxes/arrows/trails]
     H --> K[HudPanel\nDear ImGui table]
-    I --> L[OpenGL Window]
-    J --> L
-    K --> L
+    H --> L[AiPanel\nDear ImGui AI window]
+    I --> M[OpenGL Window]
+    J --> M
+    K --> M
+    L --> M
+    N[GeminiClient\nasync thread] -->|response text| L
+    D -.->|TrackList snapshot| N
 ```
 
 ---
 
 ## Per-Frame Data Flow
-
-Every frame goes through exactly this sequence — no exceptions:
 
 ```mermaid
 sequenceDiagram
@@ -92,6 +129,7 @@ sequenceDiagram
     participant TrackManager
     participant ThreatScorer
     participant Renderer
+    participant GeminiClient
 
     Main->>VideoSource: read(frame)
     VideoSource-->>Main: cv::Mat (BGR)
@@ -105,11 +143,14 @@ sequenceDiagram
     TrackManager-->>Main: TrackList
 
     Main->>ThreatScorer: score(tracks)
-    Note over ThreatScorer: speed + area → LOW/MED/HIGH
     ThreatScorer-->>Main: (mutates tracks in-place)
 
+    Note over Main,GeminiClient: G key or button press (non-blocking)
+    Main->>GeminiClient: requestAnalysis(tracks)
+    GeminiClient-->>Main: (background thread fires, returns immediately)
+
     Main->>Renderer: uploadFrame + draw
-    Note over Renderer: BGR→RGB → GL texture<br/>GL_LINES overlays<br/>ImGui HUD
+    Note over Renderer: BGR→RGB → GL texture<br/>GL_LINES overlays<br/>ImGui HUD + AI panel
     Renderer-->>Main: glfwSwapBuffers
 ```
 
@@ -153,13 +194,21 @@ flowchart LR
     D --> E[Morphological Open\nRemove tiny noise blobs]
     E --> F[Dilate\nFill gaps inside objects]
     F --> G[findContours]
-    G --> H{Area filter\n500 – 50 000 px²}
+    G --> H{Area filter\n2 000 – 50 000 px²}
     H -->|pass| I[DetectionList]
     H -->|reject| J[discard]
 ```
 
 **What is morphological opening?**
 It's an erosion followed by a dilation. Erosion shrinks blobs, removing tiny specks. Dilation grows them back. The net effect: small noise disappears, larger real objects survive.
+
+**Sensitivity tuning** (in `Detector.hpp` / `Detector.cpp`):
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `varThreshold` (MOG2) | 36 | How much a pixel must change to be called foreground. Higher = less sensitive to noise/flicker. |
+| `MIN_AREA` | 2000 px² | Minimum blob size. Raise to ignore small noise, lower to catch small targets. |
+| `MAX_AREA` | 50 000 px² | Maximum blob size. Lower to ignore large background regions. |
 
 Each surviving contour becomes a `Detection` struct:
 
@@ -217,7 +266,7 @@ flowchart LR
     C -->|No| F[Use prediction only\nlostFrameCount++]
 ```
 
-The brilliant part: when an object is briefly occluded (hidden behind something), the filter keeps predicting its position based on its last known velocity. The track stays alive for up to 15 missed frames.
+When an object is briefly occluded, the filter keeps predicting its position based on its last known velocity. The track stays alive for up to `MAX_LOST` missed frames.
 
 ---
 
@@ -259,7 +308,7 @@ IoU = 0.0  → no overlap at all
 IoU = 1.0  → perfect overlap
 ```
 
-We build an **N×M cost matrix** where `cost[i][j] = 1 - IoU(track_i, detection_j)`, then find the minimum-cost assignment using the **Hungarian algorithm**.
+We build an **N×M cost matrix** where `cost[i][j] = 1 - IoU(track_i, detection_j)`, then find the minimum-cost assignment using the **Hungarian algorithm** (O(n³)).
 
 #### Track FSM (Finite State Machine)
 
@@ -267,21 +316,29 @@ Every track lives in one of four states:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NEW : detection with no match
+    [*] --> NEW : unmatched detection
 
-    NEW --> ACTIVE : matched ≥ 3 frames in a row
-    NEW --> DEAD : lost ≥ 15 frames
+    NEW --> ACTIVE : matched ≥ 7 frames in a row
+    NEW --> DEAD : lost ≥ 8 frames
 
     ACTIVE --> LOST : missed 1 frame
-    ACTIVE --> DEAD : lost ≥ 15 frames
+    ACTIVE --> DEAD : lost ≥ 8 frames
 
     LOST --> ACTIVE : re-matched to a detection
-    LOST --> DEAD : lost ≥ 15 frames
+    LOST --> DEAD : lost ≥ 8 frames
 
     DEAD --> [*]
 ```
 
-**Why the NEW state?** A single spurious detection (a shadow, a reflection) shouldn't immediately become a track. It must survive 3 consecutive frames before being promoted to ACTIVE and shown in the HUD.
+**Why the NEW state?** A spurious detection (a shadow, a reflection, compression artifact) shouldn't immediately become a track. It must survive 7 consecutive frames before being promoted to ACTIVE and shown in the HUD.
+
+**Sensitivity tuning** (in `TrackManager.hpp`):
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `CONFIRM_HITS` | 7 | Frames before NEW → ACTIVE. Higher = fewer ghost tracks. |
+| `MAX_LOST` | 8 | Frames before LOST → DEAD. Lower = tracks die faster. |
+| `IOU_THRESHOLD` | 0.25 | Minimum overlap to accept a match. Higher = stricter. |
 
 ---
 
@@ -317,7 +374,7 @@ flowchart TD
 
 ### 6. Renderer (`render/`)
 
-The rendering layer owns the GLFW window and drives three sub-systems each frame.
+The rendering layer owns the GLFW window and drives four sub-systems each frame.
 
 #### OpenGL Rendering Pipeline
 
@@ -332,23 +389,23 @@ flowchart TD
     G --> H[Overlays drawn on top]
 
     I[TrackList + FPS] --> J[HudPanel::render\nDear ImGui table]
-    J --> K[ImGui::Render\nImGui_ImplOpenGL3_RenderDrawData]
-    K --> L[HUD drawn on top]
+    J --> K[ImGui HUD]
 
-    D & H & L --> M[glfwSwapBuffers\nFrame shown to user]
+    L[isAnalyzing + text] --> M[AiPanel::render\nDear ImGui window]
+    M --> N[AI panel drawn at bottom]
+
+    D & H & K & N --> O[glfwSwapBuffers\nFrame shown to user]
 ```
 
 #### Why BGR→RGB?
 
-OpenCV stores images in **BGR** order (Blue, Green, Red) — a historical quirk from when it was first written. OpenGL expects **RGB**. Without the conversion, red and blue channels swap and everything looks wrong (faces appear blue-tinted, etc.).
+OpenCV stores images in **BGR** order — a historical quirk. OpenGL expects **RGB**. Without the conversion, red and blue channels swap.
 
 ```cpp
 cv::cvtColor(bgrFrame, m_rgbBuf, cv::COLOR_BGR2RGB);  // mandatory!
 ```
 
 #### Coordinate Systems
-
-The overlay renderer converts pixel coordinates to **NDC** (Normalized Device Coordinates) that OpenGL understands:
 
 ```
 Pixel space          NDC space
@@ -361,7 +418,62 @@ ndcX = pixel_x / width  * 2 - 1
 ndcY = 1 - pixel_y / height * 2   ← Y is flipped!
 ```
 
-The Y flip is because pixels count downward from the top, but NDC counts upward from the bottom.
+---
+
+### 7. AI Tactical Analyst (`ai/`)
+
+An async Gemini API integration that generates natural language situation reports from live tracking data. Triggered by pressing `G` or clicking "Analyze Now" in the on-screen panel.
+
+#### What the LLM Sees
+
+Each API call sends a prompt like:
+
+```
+You are a tactical AI analyst. Analyze the following tracking data and
+give a concise 2-3 sentence situational assessment.
+
+Current tracking report:
+- Target #2 [ACTIVE]: pos=(312,180), size=8400 px^2, speed=9.3 px/frame,
+  moving down-right, threat=HIGH, tracked 47 frames
+- Target #5 [ACTIVE]: pos=(120,400), size=3200 px^2, speed=1.2 px/frame,
+  stationary, threat=LOW, tracked 12 frames
+```
+
+Fields sent per track: **ID, state, position, bounding box size, speed, heading (8 cardinal directions), threat level, age**.
+
+#### Cost Controls
+
+To avoid unexpected API charges, three hard limits are enforced in `GeminiClient`:
+
+| Guard | Default | Configurable via |
+|-------|---------|-----------------|
+| Cooldown | 30 s between calls | `GeminiClient` constructor arg |
+| Session cap | 20 calls per run | `GeminiClient` constructor arg |
+| `maxOutputTokens` | 120 tokens | `GeminiClient` constructor arg |
+
+The panel header always shows `calls: X / 20` so usage is visible at a glance. If a limit blocks a request, the reason appears inline in the panel.
+
+#### Thread Model
+
+The API call never touches the render thread:
+
+```
+Render thread                    Worker thread
+─────────────                    ─────────────
+requestAnalysis(tracks)
+  → serialize to string prompt
+  → spawn std::thread ──────────► workerFunc(prompt)
+  → return immediately              curl POST → Gemini
+                                    parse JSON response
+                                    lock mutex
+                                    store result
+                                    m_isAnalyzing = false
+
+[next frames: poll each frame]
+pollResult(out) ◄──────────────── (result waiting in mutex-guarded string)
+  → aiText = response
+  → display in AiPanel
+```
 
 ---
 
@@ -370,8 +482,10 @@ The Y flip is because pixels count downward from the top, but NDC counts upward 
 ```
 cv-project/
 │
-├── CMakeLists.txt              Build system — links OpenCV, GLFW, GLAD, GLM, ImGui
-├── vcpkg.json                  Dependency manifest for vcpkg
+├── CMakeLists.txt              Build system — links OpenCV, GLFW, GLAD, GLM, ImGui, curl, nlohmann-json
+├── vcpkg.json                  Dependency manifest
+├── .env                        API keys (not committed)
+├── .env.example                Template — copy to .env and fill in
 │
 ├── shaders/
 │   ├── video.vert / .frag      Fullscreen textured quad
@@ -381,11 +495,12 @@ cv-project/
 │   └── (drop your .mp4 here)
 │
 └── src/
-    ├── main.cpp                Main loop: read → detect → track → score → render
+    ├── main.cpp                Main loop: read → detect → track → score → render → AI poll
     │
     ├── common/
     │   ├── Types.hpp           Detection, Track, ThreatLevel, TrackState
-    │   └── Hungarian.hpp       Header-only O(n³) assignment algorithm
+    │   ├── Hungarian.hpp       Header-only O(n³) assignment algorithm
+    │   └── EnvLoader.hpp       Header-only .env file parser
     │
     ├── capture/
     │   └── VideoCapture        RAII camera/file wrapper
@@ -400,12 +515,16 @@ cv-project/
     ├── threat/
     │   └── ThreatScorer        Speed + area → LOW / MEDIUM / HIGH
     │
+    ├── ai/
+    │   └── GeminiClient        Async Gemini REST API client (libcurl + nlohmann-json)
+    │
     └── render/
         ├── Renderer            Top-level: owns GLFW window, drives loop
         ├── ShaderProgram       Compile + link GLSL shaders, RAII handle
         ├── VideoTexture        BGR→RGB, glTexSubImage2D upload
         ├── OverlayRenderer     GL_LINES scratch-buffer renderer
-        └── HudPanel            Dear ImGui target table
+        ├── HudPanel            Dear ImGui target table
+        └── AiPanel             Dear ImGui AI analyst panel
 ```
 
 ---
@@ -436,11 +555,10 @@ cmake -B build -S . `
 cmake --build build --config Release
 
 # 4. Run
-.\build\Release\CVTrackingSystem.exe 0              # webcam
-.\build\Release\CVTrackingSystem.exe assets\vid.mp4 # video file
+.\build\Release\CVTrackingSystem.exe assets\vid.mp4
 ```
 
-CMake automatically copies the shader files and all required OpenCV DLLs next to the `.exe` after each build.
+CMake automatically copies shader files, `.env`, and all required DLLs next to the `.exe` after each build.
 
 ---
 
@@ -448,7 +566,7 @@ CMake automatically copies the shader files and all required OpenCV DLLs next to
 
 | Concept | Where |
 |---------|-------|
-| RAII (constructor acquires, destructor releases) | `VideoSource`, `ShaderProgram`, `VideoTexture` |
+| RAII (constructor acquires, destructor releases) | `VideoSource`, `ShaderProgram`, `VideoTexture`, `GeminiClient` |
 | Deleted copy / defaulted move | `VideoSource`, `Renderer` |
 | `cv::Ptr<>` (OpenCV's smart pointer) | `Detector` — `BackgroundSubtractorMOG2` |
 | `std::unique_ptr` for polymorphism | `TrackManager` — one `KalmanTracker*` per track |
@@ -456,8 +574,10 @@ CMake automatically copies the shader files and all required OpenCV DLLs next to
 | `std::deque` (double-ended queue) | `Track::trail` — efficient front pop |
 | Header-only template algorithm | `Hungarian.hpp` |
 | `const` correctness | `ThreatScorer::score(const Track&)` |
-| `std::clamp` | `ThreatScorer` — keeps score in `[0,4]` |
 | Scratch buffer pattern | `OverlayRenderer::m_vertices` — pre-allocated, cleared each frame |
+| `std::thread` + `std::mutex` | `GeminiClient` — background API call without blocking render |
+| `std::atomic<bool>` | `GeminiClient::m_isAnalyzing` — lock-free status flag |
+| Move semantics in hot path | `pollResult()` — `std::move` avoids string copy |
 
 ---
 
@@ -465,20 +585,31 @@ CMake automatically copies the shader files and all required OpenCV DLLs next to
 
 - The overlay vertex buffer is rebuilt from scratch each frame but never `new`/`delete`-allocated — `std::vector::clear()` keeps capacity, so no heap allocation in the hot path.
 - `glTexSubImage2D` re-uses GPU texture storage allocated once in `init()` — no per-frame GPU alloc.
-- `glfwSwapInterval(0)` disables vsync so the loop runs as fast as the hardware allows. On a typical laptop you should see 40–90 FPS at 640×480.
+- `glfwSwapInterval(0)` disables vsync so the loop runs as fast as the hardware allows. ~40–90 FPS at 640×480 on a typical laptop.
 - The Hungarian algorithm is O(n³) in track count — fine for dozens of targets, would need approximate methods (e.g. auction algorithm) for hundreds.
+- The Gemini API call runs on a dedicated thread — zero render-loop cost while waiting for a response.
+
+---
+
+## Recommended Demo Footage
+
+The system requires a **static camera** (MOG2 treats camera motion as foreground).
+
+| Source | What to search | Why it works well |
+|--------|---------------|-------------------|
+| **PETS 2009 dataset** | "PETS 2009 S2L1" | Classic CV benchmark — pedestrians, fixed CCTV angle |
+| **UA-DETRAC dataset** | "UA-DETRAC" | Overhead highway cameras, multiple vehicles, varied speeds |
+| **Pexels (free stock)** | "busy intersection top view" | Clean overhead shot, immediate multi-target tracking |
 
 ---
 
 ## Extending the Project
-
-Some ideas if you want to keep learning:
 
 | Idea | Concepts learned |
 |------|-----------------|
 | Replace MOG2 with a YOLO model (`cv::dnn`) | Neural network inference in OpenCV |
 | Add a config file (JSON/TOML) for thresholds | File I/O, serialization |
 | Record output video with `cv::VideoWriter` | OpenCV encoding pipeline |
-| Multi-thread detection + render on separate threads | `std::thread`, `std::mutex` |
-| Replace Hungarian with JPDA for ghost tracks | Probabilistic data association |
+| Replace Hungarian with JPDA for probabilistic association | Probabilistic data association |
 | Add a map view (bird's-eye) as a second window | Multiple GL contexts |
+| Stream AI analysis to a log file | File I/O, structured logging |
