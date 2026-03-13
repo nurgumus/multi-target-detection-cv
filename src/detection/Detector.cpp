@@ -4,7 +4,7 @@
 Detector::Detector()
     // varThreshold: how much a pixel must change to be called foreground.
     // 16 = very sensitive (noisy), 36-50 = calmer, 64+ = only clear motion.
-    : m_mog2(cv::createBackgroundSubtractorMOG2(500, 36, true))
+    : m_mog2(cv::createBackgroundSubtractorMOG2(500, 64, true))
     , m_morphKernel(cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)))
 {}
 

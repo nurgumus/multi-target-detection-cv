@@ -19,6 +19,6 @@ private:
 
     // Raise MIN_AREA to filter out small noise blobs.
     // Lower MAX_AREA if you want to ignore very large background regions.
-    static constexpr float MIN_AREA = 2000.f;
+    static constexpr float MIN_AREA = 3000.f;
     static constexpr float MAX_AREA = 50000.f;
 };

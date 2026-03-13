@@ -24,7 +24,7 @@ private:
     //                  Lower = less "sticky" tracks.
     //   IOU_THRESHOLD: minimum bounding-box overlap to accept a detection→track match.
     //                  Higher = stricter matching, less cross-track confusion.
-    static constexpr int   CONFIRM_HITS  = 5;    // was 3
+    static constexpr int   CONFIRM_HITS  = 7;    // was 3
     static constexpr int   MAX_LOST      = 8;    // was 15
     static constexpr float IOU_THRESHOLD = 0.25f; // was 0.15
 

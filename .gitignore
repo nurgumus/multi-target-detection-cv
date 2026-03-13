@@ -11,3 +11,4 @@ assets/*.mp4
 assets/*.avi
 assets/*.mkv
 .env
+data
