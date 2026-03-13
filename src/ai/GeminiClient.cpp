@@ -84,7 +84,7 @@ void GeminiClient::workerFunc(std::string prompt) {
     } else {
         std::string url =
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.0-flash:generateContent?key=" + m_apiKey;
+            "gemini-2.5-flash:generateContent?key=" + m_apiKey;
 
         // Build request JSON
         json body;
